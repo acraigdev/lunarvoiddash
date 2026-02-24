@@ -1,0 +1,104 @@
+{
+    "env": {
+      "node": true
+    },
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/eslint-recommended",
+      "plugin:@typescript-eslint/recommended",
+      "plugin:import/recommended",
+      "plugin:import/typescript",
+      "plugin:react-hooks/recommended",
+      "plugin:react/recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+      "@typescript-eslint",
+      "prettier",
+      "react"
+    ],
+    "root": true,
+    "ignorePatterns": ["node_modules"],
+    "rules": {
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        {
+          "prefer": "type-imports"
+        }
+      ],
+      "@typescript-eslint/explicit-module-boundary-types": "off",
+      "@typescript-eslint/no-non-null-assertion": "error",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { "varsIgnorePattern": "^_", "argsIgnorePattern": "^_" }],
+      "arrow-body-style": "off",
+      "arrow-parens": ["error", "as-needed"],
+      "comma-spacing": "error",
+      "eol-last": "error",
+      "import/no-absolute-path": "error",
+      "import/no-default-export": "error",
+      "import/no-extraneous-dependencies": [
+        "error",
+        {
+          "devDependencies": [
+            "**/*.test.ts",
+            "**/*.spec.ts",
+            "**/*.test.tsx",
+            "**/*.spec.tsx",
+            "**/*.style.ts",
+            "./configuration/**/*",
+            "./scripts/**/*",
+            "*webpack*"
+          ]
+        }
+      ],
+      "init-declarations": ["error", "always"],
+      "jsx-quotes": "error",
+      "no-console": "warn",
+      "no-multiple-empty-lines": [
+        "error",
+        {
+          "max": 2,
+          "maxBOF": 0,
+          "maxEOF": 4
+        }
+      ],
+      "no-new-wrappers": "error",
+      "no-param-reassign": "error",
+      "object-curly-spacing": ["error", "always"],
+      "one-var": ["error", "never"],
+      "prefer-arrow-callback": "off",
+      "prefer-template": "error",
+      "prettier/prettier": [
+        "warn",
+        {
+          "printWidth": 80,
+          "endOfLine": "auto"
+        }
+      ],
+      "quotes": [
+        "error",
+        "single",
+        {
+          "avoidEscape": true
+        }
+      ],
+      "react-hooks/exhaustive-deps": "error",
+      "react/jsx-uses-react": "error",
+      "react/no-unstable-nested-components": "off",
+      "semi": ["error", "always"],
+      "semi-spacing": ["error"],
+      "no-extra-boolean-cast": "off",
+      "import/no-cycle": 2
+    },
+    "settings": {
+      "react": {
+        "version": "detect"
+      }
+    },
+    "globals": {
+      "window": true,
+      "navigator": true,
+      "document": true
+    }
+   }
+   
