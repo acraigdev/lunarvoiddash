@@ -8,14 +8,14 @@ runConfig:
 env:
   # Public — safe to commit. Used at build time and runtime.
   - variable: GOOGLE_CLIENT_ID
-    value: YOUR_CLIENT_ID.apps.googleusercontent.com
+    value: 450392746945-19n00dtshohffrkv42qt4n5hn9jssc30.apps.googleusercontent.com
     availability:
       - BUILD
       - RUNTIME
 
   # The deployed URL — update after first deploy if using a custom domain.
   - variable: NEXTAUTH_URL
-    value: https://lunarvoiddash.web.app
+    value: https://lunarvoiddash--lunarvoiddash.us-central1.hosted.app
     availability:
       - BUILD
       - RUNTIME
