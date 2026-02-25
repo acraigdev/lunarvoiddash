@@ -42,3 +42,27 @@ h5 {
 p {
   @apply text-base font-medium;
 }
+
+/* Minimal scrollbars — standard (Chrome 121+, Firefox) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* Minimal scrollbars — webkit fallback */
+*::-webkit-scrollbar {
+  width: 4px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
