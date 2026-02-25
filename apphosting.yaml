@@ -30,13 +30,11 @@ env:
   # Secrets — stored in Google Secret Manager, never committed.
   # Create with: gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=-
   - variable: GOOGLE_CLIENT_SECRET
-    secret: GOOGLE_CLIENT_SECRET
+    secret: projects/450392746945/secrets/GOOGLE_CLIENT_SECRET
     availability:
       - RUNTIME
 
-  # Generate with: npx auth secret
-  # Create with: gcloud secrets create AUTH_SECRET --data-file=-
   - variable: AUTH_SECRET
-    secret: AUTH_SECRET
+    secret: projects/450392746945/secrets/AUTH_SECRET
     availability:
       - RUNTIME
