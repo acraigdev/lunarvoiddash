@@ -8,7 +8,7 @@ runConfig:
 env:
   # Public — safe to commit. Used at build time and runtime.
   - variable: GOOGLE_CLIENT_ID
-    value: 450392746945-19n00dtshohffrkv42qt4n5hn9jssc30.apps.googleusercontent.com
+    value: 728063524393-mvt8hj5gl6e8ad7il7v5k4fomb2p7of9.apps.googleusercontent.com
     availability:
       - BUILD
       - RUNTIME
@@ -30,11 +30,11 @@ env:
   # Secrets — stored in Google Secret Manager, never committed.
   # Create with: gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=-
   - variable: GOOGLE_CLIENT_SECRET
-    secret: projects/450392746945/secrets/GOOGLE_CLIENT_SECRET
+    secret: GOOGLE_CLIENT_SECRET
     availability:
       - RUNTIME
 
   - variable: AUTH_SECRET
-    secret: projects/450392746945/secrets/AUTH_SECRET
+    secret: AUTH_SECRET
     availability:
       - RUNTIME
