@@ -1,0 +1,42 @@
+runConfig:
+  region: us-central1
+  memoryMiB: 512
+  minInstances: 0
+  maxInstances: 10
+  concurrency: 80
+
+env:
+  # Public — safe to commit. Used at build time and runtime.
+  - variable: GOOGLE_CLIENT_ID
+    value: YOUR_CLIENT_ID.apps.googleusercontent.com
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # The deployed URL — update after first deploy if using a custom domain.
+  - variable: NEXTAUTH_URL
+    value: https://lunarvoiddash.web.app
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Optional: replace DEMO_KEY with a real NASA API key.
+  - variable: NEXT_PUBLIC_NASA_API_KEY
+    value: DEMO_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+
+  # Secrets — stored in Google Secret Manager, never committed.
+  # Create with: gcloud secrets create GOOGLE_CLIENT_SECRET --data-file=-
+  - variable: GOOGLE_CLIENT_SECRET
+    secret: GOOGLE_CLIENT_SECRET
+    availability:
+      - RUNTIME
+
+  # Generate with: npx auth secret
+  # Create with: gcloud secrets create AUTH_SECRET --data-file=-
+  - variable: AUTH_SECRET
+    secret: AUTH_SECRET
+    availability:
+      - RUNTIME
