@@ -1,12 +1,12 @@
 'use client';
 
-// import { useZoneFocus } from '@/hooks/useZoneFocus';
+import { useZoneFocus } from '@/hooks/useZoneFocus';
 // import { RemoteNav } from './RemoteNav';
 import { CalendarWidget } from './CalendarWidget';
 // import { TaskList } from './TaskList';
 
 export function HomeClient() {
-  // const { focusedIndex, isActive } = useZoneFocus(2);
+  const { focusedIndex, isActive } = useZoneFocus(1);
 
   return (
     <div className="flex flex-col-2 justify-between">
@@ -16,8 +16,8 @@ export function HomeClient() {
         isActive={focusedIndex === 0 && isActive}
       /> */}
       <CalendarWidget
-        // isFocused={focusedIndex === 1}
-        // isActive={focusedIndex === 1 && isActive}
+        isFocused={focusedIndex === 0}
+        isActive={focusedIndex === 0 && isActive}
         className=""
       />
     </div>
