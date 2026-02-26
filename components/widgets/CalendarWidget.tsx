@@ -45,9 +45,10 @@ function groupByDate(events: Nullable<CalendarEvent[]>) {
 interface Props {
   isFocused?: boolean;
   isActive?: boolean;
+  onActivate?: () => void;
 }
 
-export function CalendarWidget({ isFocused = false, isActive = false }: Props) {
+export function CalendarWidget({ isFocused = false, isActive = false, onActivate }: Props) {
   const { data: session } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +91,7 @@ export function CalendarWidget({ isFocused = false, isActive = false }: Props) {
   const grouped = groupByDate(events);
 
   return (
-    <ZoneContainer ref={scrollRef} isFocused={isFocused} isActive={isActive}>
+    <ZoneContainer ref={scrollRef} isFocused={isFocused} isActive={isActive} onClick={onActivate}>
       {!events ||
         (!events.length && (
           <p className="text-sm opacity-60">

@@ -7,7 +7,7 @@ import { TaskWidget } from '../widgets/TaskWidget';
 import { WeatherWidget } from '../widgets/WeatherWidget';
 
 export function HomeClient() {
-  const { focusedIndex, isActive } = useZoneFocus(2);
+  const { focusedIndex, isActive, activateZone } = useZoneFocus(2);
 
   return (
     <div className="h-full flex flex-row justify-center gap-8">
@@ -16,6 +16,7 @@ export function HomeClient() {
         <TaskWidget
           isFocused={focusedIndex === 0}
           isActive={focusedIndex === 0 && isActive}
+          onActivate={() => activateZone(0)}
           pageId="home"
           className="self-start min-h-0"
         />
@@ -24,6 +25,7 @@ export function HomeClient() {
       <CalendarWidget
         isFocused={focusedIndex === 1}
         isActive={focusedIndex === 1 && isActive}
+        onActivate={() => activateZone(1)}
       />
     </div>
   );

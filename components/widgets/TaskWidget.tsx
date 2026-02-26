@@ -9,6 +9,7 @@ import { ZoneContainer } from '../ZoneContainer';
 interface Props {
   isFocused?: boolean;
   isActive?: boolean;
+  onActivate?: () => void;
   pageId?: string;
   className?: string;
 }
@@ -25,6 +26,7 @@ function getNameStorageKey(pageId: string) {
 export function TaskWidget({
   isFocused,
   isActive,
+  onActivate,
   pageId = 'default',
   className,
 }: Props) {
@@ -201,6 +203,7 @@ export function TaskWidget({
       isFocused={isFocused}
       isActive={isActive}
       className={className}
+      onClick={onActivate}
     >
       {/* Header — current list name, acts as menu toggle */}
       <div
@@ -209,9 +212,15 @@ export function TaskWidget({
           else rowRefs.current.delete(0);
         }}
         className={
-          'text-xs font-bold uppercase tracking-widest mb-3 rounded px-1.5 py-0.5 flex items-center gap-1.5' +
+          'text-xs font-bold uppercase tracking-widest mb-3 rounded px-1.5 py-0.5 flex items-center gap-1.5 cursor-pointer' +
           (isActive && cursorIndex === 0 ? ' bg-white/20' : '')
         }
+        onClick={e => {
+          e.stopPropagation();
+          if (!isActive) onActivate?.();
+          setMenuOpen(prev => !prev);
+          setCursorIndex(0);
+        }}
       >
         {selectedListName}
         <span className="text-[10px] opacity-40">{menuOpen ? '▲' : '▼'}</span>
@@ -233,10 +242,14 @@ export function TaskWidget({
                   else rowRefs.current.delete(rowIndex);
                 }}
                 className={
-                  'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-0.5 transition-all' +
+                  'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-0.5 transition-all cursor-pointer' +
                   (isCursor ? ' bg-white/20' : '') +
                   (isSelected ? ' opacity-100' : ' opacity-40')
                 }
+                onClick={e => {
+                  e.stopPropagation();
+                  handleListChange(list.id, list.title);
+                }}
               >
                 {list.title}
               </span>
@@ -263,9 +276,14 @@ export function TaskWidget({
                   else rowRefs.current.delete(rowIndex);
                 }}
                 className={
-                  'flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors' +
+                  'flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors cursor-pointer' +
                   (isCursor ? ' bg-white/20' : '')
                 }
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!isActive) onActivate?.();
+                  toggleQueued(task.id);
+                }}
               >
                 <span
                   className={

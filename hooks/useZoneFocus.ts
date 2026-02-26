@@ -1,24 +1,36 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 /**
- * Two-step focus model for FireStick remote navigation:
- *   1. Arrows → move focus between zones (subtle highlight)
- *   2. Enter  → activate the focused zone (strong highlight + inner interaction)
- *   3. Escape → deactivate → unfocus
+ * Two-step focus model for FireStick remote + mouse navigation:
  *
- * When a zone is active, arrows are NOT handled here — they pass through
- * to the active zone's own handlers (e.g. scroll, item navigation).
+ * Keyboard:
+ *   Arrows → move focus between zones
+ *   Enter  → activate the focused zone
+ *   Escape → deactivate → unfocus
+ *
+ * Mouse:
+ *   Click a zone → focus + activate it immediately
+ *   Click outside → deactivate
  */
 export function useZoneFocus(zoneCount: number) {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [isActive, setIsActive] = useState(false);
 
+  /** Click a zone to immediately focus + activate it. */
+  const activateZone = useCallback((index: number) => {
+    setFocusedIndex(index);
+    setIsActive(true);
+  }, []);
+
+  /** Deactivate without changing focus. */
+  const deactivate = useCallback(() => {
+    setIsActive(false);
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      // When a zone is active, only Escape exits — all other keys
-      // pass through to the zone's internal handlers.
       if (isActive) {
         if (e.key === 'Escape') {
           setIsActive(false);
@@ -27,7 +39,6 @@ export function useZoneFocus(zoneCount: number) {
         return;
       }
 
-      // Zone navigation (not active)
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
         e.preventDefault();
         setFocusedIndex((i) => (i < zoneCount - 1 ? i + 1 : 0));
@@ -46,5 +57,5 @@ export function useZoneFocus(zoneCount: number) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isActive, focusedIndex, zoneCount]);
 
-  return { focusedIndex, isActive };
+  return { focusedIndex, isActive, activateZone, deactivate };
 }
