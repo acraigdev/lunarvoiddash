@@ -2,6 +2,7 @@
 // All requests use fetch() with a Bearer token from the Auth.js session.
 // Get the token via: const session = await auth() (server) or useSession() (client).
 
+import { MoonPhases } from '@/components/MoonPhase';
 import {
   CalendarEvent,
   CalendarEventList,
@@ -267,21 +268,6 @@ export function fetchDefaultTasks(accessToken: string): Promise<Task[]> {
 
 // ─── Tasks API — Write ───────────────────────────────────────────────────────
 
-/** Create a new task in the given task list. */
-export function createTask(
-  accessToken: string,
-  taskListId: string,
-  task: Pick<Task, 'title'> & Partial<Omit<Task, 'id' | 'title'>>,
-): Promise<Task> {
-  const id = encodeURIComponent(taskListId);
-  return googleMutate<Task>(
-    `https://www.googleapis.com/tasks/v1/lists/${id}/tasks`,
-    accessToken,
-    'POST',
-    task,
-  );
-}
-
 /** Update fields on an existing task (partial update). */
 export function updateTask(
   accessToken: string,
@@ -311,17 +297,60 @@ export function completeTask(
   });
 }
 
-/** Delete a task permanently. */
-export function deleteTask(
-  accessToken: string,
-  taskListId: string,
-  taskId: string,
-): Promise<void> {
-  const lid = encodeURIComponent(taskListId);
-  const tid = encodeURIComponent(taskId);
-  return googleMutate<void>(
-    `https://www.googleapis.com/tasks/v1/lists/${lid}/tasks/${tid}`,
-    accessToken,
-    'DELETE',
+// ─── Weather types ──────────────────────────────────────────────────────────
+
+export interface WeatherCondition {
+  type: string;
+  description: { text: string; languageCode: string };
+  iconBaseUri: string;
+}
+
+export interface Temperature {
+  degrees: number;
+  unit: string;
+}
+
+export interface ForecastDay {
+  interval: { startTime: string; endTime: string };
+  displayDate: { year: number; month: number; day: number };
+  daytimeForecast?: { weatherCondition: WeatherCondition };
+  nighttimeForecast?: { weatherCondition: WeatherCondition };
+  maxTemperature: Temperature;
+  minTemperature: Temperature;
+  moonEvents: {
+    moonPhase: keyof typeof MoonPhases;
+  };
+}
+
+interface ForecastDaysResponse {
+  forecastDays: ForecastDay[];
+}
+
+// ─── Weather API (read-only) ────────────────────────────────────────────────
+
+/** Fetch a multi-day forecast from the Google Weather API. */
+export async function fetchDailyForecast(days = 5): Promise<ForecastDay[]> {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const lat = process.env.NEXT_PUBLIC_LATITUDE;
+  const lng = process.env.NEXT_PUBLIC_LONGITUDE;
+  if (!apiKey || !lat || !lng) {
+    throw new Error('Weather env vars not configured');
+  }
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    'location.latitude': lat,
+    'location.longitude': lng,
+    days: String(days),
+  });
+
+  const res = await fetch(
+    `https://weather.googleapis.com/v1/forecast/days:lookup?${params}`,
   );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Weather API ${res.status}: ${text}`);
+  }
+  const data: ForecastDaysResponse = await res.json();
+  return data.forecastDays ?? [];
 }

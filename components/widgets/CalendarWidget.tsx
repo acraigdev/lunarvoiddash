@@ -5,8 +5,8 @@ import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAllCalendarEvents } from '@/lib/google';
 import { useContactPhotos } from '@/hooks/useContactPhotos';
-import { UserAvatar } from './atoms/UserAvatar';
-import { ZoneContainer } from './atoms/ZoneContainer';
+import { UserAvatar } from '../UserAvatar';
+import { ZoneContainer } from '../ZoneContainer';
 import { format, isToday, isTomorrow } from 'date-fns';
 import { CalendarEvent } from '@/utils/GoogleEvents';
 import { Nullable } from '@/lib/typeHelpers';
@@ -45,7 +45,6 @@ function groupByDate(events: Nullable<CalendarEvent[]>) {
 interface Props {
   isFocused?: boolean;
   isActive?: boolean;
-  className?: string;
 }
 
 export function CalendarWidget({ isFocused = false, isActive = false }: Props) {

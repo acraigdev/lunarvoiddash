@@ -17,7 +17,7 @@ export function ZoneContainer({
   ref,
 }: ZoneContainerProps) {
   const widgetClass =
-    'text-white rounded-xl bg-black/30 backdrop-blur-xs max-h-full overflow-hidden transition-all' +
+    'text-white rounded-xl bg-gray-dark/50 backdrop-blur-xs max-h-full overflow-hidden transition-all' +
     (isActive
       ? ' outline outline-2 outline-white/60'
       : isFocused
@@ -25,7 +25,7 @@ export function ZoneContainer({
         : '') +
     (className ? ` ${className}` : '');
   return (
-    <div tabIndex={0} className={widgetClass}>
+    <div tabIndex={-1} className={widgetClass}>
       <div ref={ref} className="px-5 py-4 overflow-y-auto max-h-full">
         {children}
       </div>

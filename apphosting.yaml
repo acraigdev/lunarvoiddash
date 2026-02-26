@@ -20,9 +20,17 @@ env:
       - BUILD
       - RUNTIME
 
-  # Optional: replace DEMO_KEY with a real NASA API key.
+  - variable: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    value: AIzaSyAdg_px0ka4vTLxljPxZmy31DMXASLy12E
+
+  - variable: NEXT_PUBLIC_LATITUDE
+    value: '38.93221'
+
+  - variable: NEXT_PUBLIC_LONGITUDE
+    value: '-104.768363'
+
   - variable: NEXT_PUBLIC_NASA_API_KEY
-    value: DEMO_KEY
+    value: ZyLJzPOEBIcAtQrB5tuy4MfcgyF3H6lkrFLFe20L
     availability:
       - BUILD
       - RUNTIME
