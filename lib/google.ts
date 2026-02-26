@@ -2,6 +2,13 @@
 // All requests use fetch() with a Bearer token from the Auth.js session.
 // Get the token via: const session = await auth() (server) or useSession() (client).
 
+import {
+  CalendarEvent,
+  CalendarEventList,
+  CalendarListResponse,
+  CalendarMeta,
+} from '@/utils/GoogleEvents';
+
 // ─── Shared fetch helper ─────────────────────────────────────────────────────
 
 async function googleFetch<T>(url: string, accessToken: string): Promise<T> {
@@ -38,56 +45,17 @@ async function googleMutate<T>(
   return res.json() as Promise<T>;
 }
 
-// ─── Calendar list types ─────────────────────────────────────────────────────
-
-export interface CalendarMeta {
-  id: string;
-  summary: string;       // display name
-  backgroundColor: string; // hex color Google assigns, e.g. "#0B8043"
-  primary?: boolean;
-  selected?: boolean;    // whether the user has it checked in Google Calendar UI
-}
-
-interface CalendarListResponse {
-  items: CalendarMeta[];
-}
-
 // ─── Calendar list API ───────────────────────────────────────────────────────
 
 /** Fetch every calendar the authenticated user has access to. */
-export async function fetchCalendarList(accessToken: string): Promise<CalendarMeta[]> {
+export async function fetchCalendarList(
+  accessToken: string,
+): Promise<CalendarMeta[]> {
   const data = await googleFetch<CalendarListResponse>(
     'https://www.googleapis.com/calendar/v3/users/me/calendarList',
     accessToken,
   );
   return data.items ?? [];
-}
-
-// ─── Calendar types ──────────────────────────────────────────────────────────
-
-export interface CalendarEventDateTime {
-  dateTime?: string; // ISO 8601, present for timed events
-  date?: string; // YYYY-MM-DD, present for all-day events
-  timeZone?: string;
-}
-
-export interface CalendarEvent {
-  id: string;
-  summary: string;
-  description?: string;
-  location?: string;
-  start: CalendarEventDateTime;
-  end: CalendarEventDateTime;
-  status: 'confirmed' | 'tentative' | 'cancelled';
-  htmlLink: string;
-  // Enriched client-side — not part of the Google API response
-  calendarId?: string;
-  calendarColor?: string;
-}
-
-interface CalendarEventList {
-  items: CalendarEvent[];
-  nextPageToken?: string;
 }
 
 // ─── Calendar API (read-only) ────────────────────────────────────────────────
@@ -109,7 +77,7 @@ export function fetchCalendarEvents(
   return googleFetch<CalendarEventList>(
     `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
     accessToken,
-  ).then((data) => data.items ?? []);
+  ).then(data => data.items ?? []);
 }
 
 /** Fetch events from a specific calendar by its ID. */
@@ -131,7 +99,7 @@ export function fetchCalendarEventsById(
   return googleFetch<CalendarEventList>(
     `https://www.googleapis.com/calendar/v3/calendars/${id}/events?${params}`,
     accessToken,
-  ).then((data) => data.items ?? []);
+  ).then(data => data.items ?? []);
 }
 
 /**
@@ -144,23 +112,100 @@ export async function fetchAllCalendarEvents(
   days = 7,
 ): Promise<CalendarEvent[]> {
   const allCalendars = await fetchCalendarList(accessToken);
-  const calendars = allCalendars.filter((cal) => cal.selected === true);
+  const calendars = allCalendars.filter(cal => cal.selected === true);
 
   const results = await Promise.allSettled(
-    calendars.map((cal) =>
-      fetchCalendarEventsById(accessToken, cal.id, days).then((events) =>
-        events.map((e) => ({ ...e, calendarId: cal.id, calendarColor: cal.backgroundColor })),
+    calendars.map(cal =>
+      fetchCalendarEventsById(accessToken, cal.id, days).then(events =>
+        events.map(e => ({
+          ...e,
+          calendarId: cal.id,
+          calendarColor: cal.backgroundColor,
+          calendarName: cal.summary,
+          calendarPrimary: cal.primary ?? false,
+        })),
       ),
     ),
   );
 
-  const allEvents = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+  const allEvents = results.flatMap(r =>
+    r.status === 'fulfilled' ? r.value : [],
+  );
 
   return allEvents.sort((a, b) => {
     const aTime = a.start.dateTime ?? a.start.date ?? '';
     const bTime = b.start.dateTime ?? b.start.date ?? '';
     return aTime.localeCompare(bTime);
   });
+}
+
+// ─── People API types ────────────────────────────────────────────────────
+
+export interface PersonPhoto {
+  url: string;
+  metadata?: { primary?: boolean };
+}
+
+export interface PersonEmailAddress {
+  value: string;
+  metadata?: { primary?: boolean };
+}
+
+export interface Person {
+  resourceName: string;
+  photos?: PersonPhoto[];
+  emailAddresses?: PersonEmailAddress[];
+}
+
+interface SearchContactsResponse {
+  results?: Array<{ person: Person }>;
+}
+
+// ─── People API (read-only) ─────────────────────────────────────────────
+
+/**
+ * Search for a contact's photo by email. Checks saved contacts and
+ * "other contacts" (auto-saved from email interactions) in parallel.
+ * Returns the photo URL or undefined if not found.
+ */
+export async function searchContactPhoto(
+  accessToken: string,
+  email: string,
+): Promise<string | undefined> {
+  const params = new URLSearchParams({
+    query: email,
+    readMask: 'photos,emailAddresses',
+  });
+
+  const [contacts, others] = await Promise.allSettled([
+    googleFetch<SearchContactsResponse>(
+      `https://people.googleapis.com/v1/people:searchContacts?${params}`,
+      accessToken,
+    ),
+    googleFetch<SearchContactsResponse>(
+      `https://people.googleapis.com/v1/otherContacts:search?${params}`,
+      accessToken,
+    ),
+  ]);
+
+  const needle = email.toLowerCase();
+
+  for (const result of [contacts, others]) {
+    if (result.status !== 'fulfilled') continue;
+    for (const match of result.value.results ?? []) {
+      const hasEmail = match.person.emailAddresses?.some(
+        e => e.value?.toLowerCase() === needle,
+      );
+      if (hasEmail) {
+        return (
+          match.person.photos?.find(p => p.metadata?.primary)?.url ??
+          match.person.photos?.[0]?.url
+        );
+      }
+    }
+  }
+
+  return undefined;
 }
 
 // ─── Tasks types ─────────────────────────────────────────────────────────────
@@ -196,17 +241,23 @@ export function fetchTaskLists(accessToken: string): Promise<TaskList[]> {
   return googleFetch<TaskListsResponse>(
     'https://www.googleapis.com/tasks/v1/users/@me/lists',
     accessToken,
-  ).then((data) => data.items ?? []);
+  ).then(data => data.items ?? []);
 }
 
 /** Fetch incomplete tasks from a specific task list. */
-export function fetchTasks(accessToken: string, taskListId: string): Promise<Task[]> {
-  const params = new URLSearchParams({ showCompleted: 'false', maxResults: '100' });
+export function fetchTasks(
+  accessToken: string,
+  taskListId: string,
+): Promise<Task[]> {
+  const params = new URLSearchParams({
+    showCompleted: 'false',
+    maxResults: '100',
+  });
   const id = encodeURIComponent(taskListId);
   return googleFetch<TasksResponse>(
     `https://www.googleapis.com/tasks/v1/lists/${id}/tasks?${params}`,
     accessToken,
-  ).then((data) => data.items ?? []);
+  ).then(data => data.items ?? []);
 }
 
 /** Fetch tasks from the default (@default) task list. */

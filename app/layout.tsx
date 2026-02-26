@@ -15,12 +15,16 @@ export const metadata: Metadata = {
   title: 'Lunar Void Dash',
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const apod = await getImageOTD();
 
   return (
-    <html lang="en" className={montserrat.variable}>
-      <body className="overflow-hidden">
+    <html lang="en" className={`${montserrat.variable} h-full`}>
+      <body className="overflow-hidden h-full">
         <Wallpaper apod={apod} />
         <Providers>{children}</Providers>
       </body>
