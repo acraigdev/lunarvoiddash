@@ -107,6 +107,10 @@ export const authConfig: NextAuthConfig = {
   // JWT strategy: sessions stored in an encrypted HttpOnly cookie.
   // No database required.
   session: { strategy: 'jwt' },
+
+  // Trust the Host header — required for production builds and
+  // when running behind a proxy (e.g. Firebase App Hosting).
+  trustHost: true,
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth(authConfig);
