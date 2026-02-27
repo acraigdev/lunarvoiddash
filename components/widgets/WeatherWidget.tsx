@@ -67,7 +67,7 @@ export function WeatherWidget({ className }: { className?: string }) {
           </p>
         </div>
         <h3 className="flex items-center gap-4">
-          {format(new Date(), 'iiii, LLL Do')}{' '}
+          {format(new Date(), 'iiii, LLL do')}{' '}
           <MoonPhase phase={today.moonEvents.moonPhase} />
         </h3>
       </div>

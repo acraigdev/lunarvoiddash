@@ -212,7 +212,7 @@ export function TaskWidget({
           else rowRefs.current.delete(0);
         }}
         className={
-          'text-xs font-bold uppercase tracking-widest mb-3 rounded px-1.5 py-0.5 flex items-center gap-1.5 cursor-pointer' +
+          'text-xs font-bold uppercase tracking-widest mb-2 rounded px-1.5 py-1.5 flex items-center justify-between gap-1.5 cursor-pointer' +
           (isActive && cursorIndex === 0 ? ' bg-white/20' : '')
         }
         onClick={e => {
@@ -223,7 +223,7 @@ export function TaskWidget({
         }}
       >
         {selectedListName}
-        <span className="text-[10px] opacity-40">{menuOpen ? '▲' : '▼'}</span>
+        <span className="text-xs opacity-40">{menuOpen ? '▲' : '▼'}</span>
       </div>
 
       {/* List picker menu (only rendered when open) */}

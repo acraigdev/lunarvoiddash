@@ -354,3 +354,100 @@ export async function fetchDailyForecast(days = 5): Promise<ForecastDay[]> {
   const data: ForecastDaysResponse = await res.json();
   return data.forecastDays ?? [];
 }
+
+// ─── Google Photos Picker types ─────────────────────────────────────────────
+
+export interface PickerSession {
+  id: string;
+  pickerUri: string;
+  pollingConfig: {
+    pollInterval: string; // e.g. "2s"
+    timeoutIn: string; // e.g. "259200s"
+  };
+  expireTime: string; // RFC 3339
+  mediaItemsSet?: boolean;
+}
+
+export interface PickerMediaItem {
+  id: string;
+  type: 'PHOTO' | 'VIDEO';
+  mediaFile: {
+    baseUrl: string;
+    mimeType: string;
+    filename: string;
+  };
+}
+
+interface PickerMediaItemsResponse {
+  mediaItems?: PickerMediaItem[];
+  nextPageToken?: string;
+}
+
+// ─── Google Photos Picker API ───────────────────────────────────────────────
+
+/** Create a new Picker session. Returns the session with a pickerUri for the user to pick photos. */
+export function createPickerSession(accessToken: string): Promise<PickerSession> {
+  return googleMutate<PickerSession>(
+    'https://photospicker.googleapis.com/v1/sessions',
+    accessToken,
+    'POST',
+  );
+}
+
+/** Poll an existing Picker session to check if the user has finished picking. */
+export function getPickerSession(
+  accessToken: string,
+  sessionId: string,
+): Promise<PickerSession> {
+  const id = encodeURIComponent(sessionId);
+  return googleFetch<PickerSession>(
+    `https://photospicker.googleapis.com/v1/sessions/${id}`,
+    accessToken,
+  );
+}
+
+/** Fetch all picked media items from a completed session. Paginates automatically. */
+export async function fetchPickedMediaItems(
+  accessToken: string,
+  sessionId: string,
+): Promise<PickerMediaItem[]> {
+  const allItems: PickerMediaItem[] = [];
+  let pageToken: string | undefined;
+  const id = encodeURIComponent(sessionId);
+
+  do {
+    const params = new URLSearchParams({ sessionId: id, pageSize: '100' });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const data = await googleFetch<PickerMediaItemsResponse>(
+      `https://photospicker.googleapis.com/v1/mediaItems?${params}`,
+      accessToken,
+    );
+    // Only keep photos, skip videos
+    const photos = (data.mediaItems ?? []).filter(item => item.type === 'PHOTO');
+    allItems.push(...photos);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return allItems;
+}
+
+/**
+ * Fetch a photo as a blob URL. The Picker API's baseUrl requires an Authorization
+ * header, so we can't use it directly in an <img src>. Instead we fetch the image
+ * via JS and create an object URL.
+ */
+export async function fetchPhotoBlob(
+  accessToken: string,
+  baseUrl: string,
+  width = 1920,
+  height = 1080,
+): Promise<string> {
+  const url = `${baseUrl}=w${width}-h${height}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Photo fetch ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
