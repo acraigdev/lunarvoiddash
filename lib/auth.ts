@@ -65,7 +65,8 @@ export const authConfig: NextAuthConfig = {
             'https://www.googleapis.com/auth/tasks', // full read+write
             'https://www.googleapis.com/auth/contacts.readonly',
             'https://www.googleapis.com/auth/contacts.other.readonly',
-            'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/youtube.readonly',
           ].join(' '),
         },
       },

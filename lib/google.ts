@@ -355,99 +355,146 @@ export async function fetchDailyForecast(days = 5): Promise<ForecastDay[]> {
   return data.forecastDays ?? [];
 }
 
-// ─── Google Photos Picker types ─────────────────────────────────────────────
+// ─── Google Drive types ─────────────────────────────────────────────────────
 
-export interface PickerSession {
+export interface DriveFolder {
   id: string;
-  pickerUri: string;
-  pollingConfig: {
-    pollInterval: string; // e.g. "2s"
-    timeoutIn: string; // e.g. "259200s"
-  };
-  expireTime: string; // RFC 3339
-  mediaItemsSet?: boolean;
+  name: string;
 }
 
-export interface PickerMediaItem {
+export interface DriveFile {
   id: string;
-  type: 'PHOTO' | 'VIDEO';
-  mediaFile: {
-    baseUrl: string;
-    mimeType: string;
-    filename: string;
-  };
+  name: string;
+  mimeType: string;
+  thumbnailLink?: string;
 }
 
-interface PickerMediaItemsResponse {
-  mediaItems?: PickerMediaItem[];
+interface DriveFileListResponse {
+  files?: DriveFile[];
   nextPageToken?: string;
 }
 
-// ─── Google Photos Picker API ───────────────────────────────────────────────
+// ─── Google Drive API (read-only) ───────────────────────────────────────────
 
-/** Create a new Picker session. Returns the session with a pickerUri for the user to pick photos. */
-export function createPickerSession(accessToken: string): Promise<PickerSession> {
-  return googleMutate<PickerSession>(
-    'https://photospicker.googleapis.com/v1/sessions',
-    accessToken,
-    'POST',
-  );
-}
-
-/** Poll an existing Picker session to check if the user has finished picking. */
-export function getPickerSession(
+/** Fetch all folders from the user's Drive. */
+export async function fetchDriveFolders(
   accessToken: string,
-  sessionId: string,
-): Promise<PickerSession> {
-  const id = encodeURIComponent(sessionId);
-  return googleFetch<PickerSession>(
-    `https://photospicker.googleapis.com/v1/sessions/${id}`,
-    accessToken,
-  );
-}
-
-/** Fetch all picked media items from a completed session. Paginates automatically. */
-export async function fetchPickedMediaItems(
-  accessToken: string,
-  sessionId: string,
-): Promise<PickerMediaItem[]> {
-  const allItems: PickerMediaItem[] = [];
+): Promise<DriveFolder[]> {
+  const allFolders: DriveFolder[] = [];
   let pageToken: string | undefined;
-  const id = encodeURIComponent(sessionId);
 
   do {
-    const params = new URLSearchParams({ sessionId: id, pageSize: '100' });
+    const params = new URLSearchParams({
+      q: "mimeType='application/vnd.google-apps.folder' and trashed=false",
+      fields: 'nextPageToken,files(id,name)',
+      pageSize: '100',
+      orderBy: 'name',
+    });
     if (pageToken) params.set('pageToken', pageToken);
 
-    const data = await googleFetch<PickerMediaItemsResponse>(
-      `https://photospicker.googleapis.com/v1/mediaItems?${params}`,
+    const data = await googleFetch<DriveFileListResponse & { files?: DriveFolder[] }>(
+      `https://www.googleapis.com/drive/v3/files?${params}`,
       accessToken,
     );
-    // Only keep photos, skip videos
-    const photos = (data.mediaItems ?? []).filter(item => item.type === 'PHOTO');
-    allItems.push(...photos);
+    allFolders.push(...(data.files ?? []));
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return allItems;
+  return allFolders;
+}
+
+/** Fetch image files from a specific Drive folder. */
+export async function fetchDriveFolderImages(
+  accessToken: string,
+  folderId: string,
+): Promise<DriveFile[]> {
+  const allFiles: DriveFile[] = [];
+  let pageToken: string | undefined;
+  const id = folderId.replace(/'/g, "\\'");
+
+  do {
+    const params = new URLSearchParams({
+      q: `'${id}' in parents and mimeType contains 'image/' and trashed=false`,
+      fields: 'nextPageToken,files(id,name,mimeType,thumbnailLink)',
+      pageSize: '100',
+      orderBy: 'name',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const data = await googleFetch<DriveFileListResponse>(
+      `https://www.googleapis.com/drive/v3/files?${params}`,
+      accessToken,
+    );
+    allFiles.push(...(data.files ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return allFiles;
 }
 
 /**
- * Fetch a photo as a blob URL. The Picker API's baseUrl requires an Authorization
- * header, so we can't use it directly in an <img src>. Instead we fetch the image
- * via JS and create an object URL.
+ * Fetch a Drive image as a blob URL. Drive file content requires an Authorization
+ * header, so we can't use it directly in an <img src>.
  */
-export async function fetchPhotoBlob(
+export async function fetchDriveImageBlob(
   accessToken: string,
-  baseUrl: string,
-  width = 1920,
-  height = 1080,
+  fileId: string,
 ): Promise<string> {
-  const url = `${baseUrl}=w${width}-h${height}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!res.ok) throw new Error(`Photo fetch ${res.status}`);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) throw new Error(`Drive image fetch ${res.status}`);
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+// ─── YouTube types ──────────────────────────────────────────────────────────
+
+export interface YouTubePlaylist {
+  id: string;
+  snippet: {
+    title: string;
+    thumbnails: {
+      default?: { url: string; width: number; height: number };
+      medium?: { url: string; width: number; height: number };
+      high?: { url: string; width: number; height: number };
+    };
+  };
+  contentDetails: {
+    itemCount: number;
+  };
+}
+
+interface YouTubePlaylistListResponse {
+  items?: YouTubePlaylist[];
+  nextPageToken?: string;
+}
+
+// ─── YouTube API (read-only) ────────────────────────────────────────────────
+
+/** Fetch all playlists owned by the authenticated user. */
+export async function fetchYouTubePlaylists(
+  accessToken: string,
+): Promise<YouTubePlaylist[]> {
+  const allPlaylists: YouTubePlaylist[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      part: 'snippet,contentDetails',
+      mine: 'true',
+      maxResults: '50',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const data = await googleFetch<YouTubePlaylistListResponse>(
+      `https://www.googleapis.com/youtube/v3/playlists?${params}`,
+      accessToken,
+    );
+    allPlaylists.push(...(data.items ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return allPlaylists;
 }

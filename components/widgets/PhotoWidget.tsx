@@ -2,16 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
-  createPickerSession,
-  getPickerSession,
-  fetchPickedMediaItems,
-  fetchPhotoBlob,
-  PickerMediaItem,
+  fetchDriveFolders,
+  fetchDriveFolderImages,
+  fetchDriveImageBlob,
+  DriveFile,
 } from '@/lib/google';
-import { ZoneContainer } from '../ZoneContainer';
-
 interface Props {
   isFocused?: boolean;
   isActive?: boolean;
@@ -20,8 +17,12 @@ interface Props {
   className?: string;
 }
 
-function getSessionStorageKey(pageId: string) {
-  return `photos-picker-session-${pageId}`;
+function getStorageKey(pageId: string) {
+  return `photos-drive-folder-${pageId}`;
+}
+
+function getNameStorageKey(pageId: string) {
+  return `photos-drive-folder-name-${pageId}`;
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -33,7 +34,7 @@ function shuffle<T>(arr: T[]): T[] {
   return result;
 }
 
-const EMPTY_ITEMS: PickerMediaItem[] = [];
+const EMPTY_FILES: DriveFile[] = [];
 
 export function PhotoWidget({
   isFocused,
@@ -43,73 +44,87 @@ export function PhotoWidget({
   className,
 }: Props) {
   const { data: session } = useSession();
-  const queryClient = useQueryClient();
+  const rowRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const wasActive = useRef(false);
 
-  // ── Persisted session ID ──────────────────────────────────────────
-  const [sessionId, setSessionId] = useState<string>(() => {
+  // ── Persisted folder selection ──────────────────────────────────
+  const [folderId, setFolderId] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
-    return localStorage.getItem(getSessionStorageKey(pageId)) || '';
+    return localStorage.getItem(getStorageKey(pageId)) || '';
   });
 
-  const [polling, setPolling] = useState(false);
-  const [picking, setPicking] = useState(false);
-  const popupRef = useRef<Window | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [folderName, setFolderName] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem(getNameStorageKey(pageId)) || '';
+  });
 
-  // ── Fetch picked media items (only when we have a session) ────────
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [cursorIndex, setCursorIndex] = useState(-1);
+
+  // ── Fetch folders (only when menu is open) ──────────────────────
+  const { data: folders = [] } = useQuery({
+    queryKey: ['drive', 'folders'],
+    queryFn: () => fetchDriveFolders(session!.accessToken),
+    enabled: menuOpen && !!session?.accessToken,
+  });
+
+  // ── Fetch images from selected folder ───────────────────────────
   const {
-    data: mediaItems = EMPTY_ITEMS,
+    data: imageFiles = EMPTY_FILES,
     isLoading,
     isError,
     dataUpdatedAt,
   } = useQuery({
-    queryKey: ['photos', 'pickerItems', sessionId],
-    queryFn: () => fetchPickedMediaItems(session!.accessToken, sessionId),
-    enabled: !!session?.accessToken && !!sessionId && !polling,
+    queryKey: ['drive', 'images', folderId],
+    queryFn: () => fetchDriveFolderImages(session!.accessToken, folderId),
+    enabled: !!session?.accessToken && !!folderId,
     staleTime: 30 * 60_000,
-    refetchInterval: 45 * 60_000, // re-fetch to get fresh baseUrls
+    refetchInterval: 60 * 60_000,
   });
 
-  // ── Shuffled order ────────────────────────────────────────────────
-  const shuffledItems = useMemo(
-    () => shuffle(mediaItems),
+  // ── Shuffled order ──────────────────────────────────────────────
+  const shuffledFiles = useMemo(
+    () => shuffle(imageFiles),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mediaItems, dataUpdatedAt],
+    [imageFiles, dataUpdatedAt],
   );
 
-  // ── Slideshow state ───────────────────────────────────────────────
+  // ── Slideshow state ─────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displaySlot, setDisplaySlot] = useState<0 | 1>(0);
   const [slots, setSlots] = useState<[string, string]>(['', '']);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wasActive = useRef(false);
+  const loadingRef = useRef(false);
 
-  // ── Load first photo when items change ────────────────────────────
+  // ── Load first photo when items change ──────────────────────────
   useEffect(() => {
     setCurrentIndex(0);
     setDisplaySlot(0);
     setSlots(['', '']);
 
-    if (shuffledItems.length > 0 && session?.accessToken) {
-      const item = shuffledItems[0];
-      fetchPhotoBlob(session.accessToken, item.mediaFile.baseUrl)
+    if (shuffledFiles.length > 0 && session?.accessToken) {
+      fetchDriveImageBlob(session.accessToken, shuffledFiles[0].id)
         .then(blobUrl => setSlots([blobUrl, '']))
         .catch(() => {});
     }
-  }, [shuffledItems, session?.accessToken]);
+  }, [shuffledFiles, session?.accessToken]);
 
-  // ── Advance to next photo ─────────────────────────────────────────
+  // ── Advance to next photo ───────────────────────────────────────
   const advance = useCallback(() => {
-    if (shuffledItems.length <= 1 || !session?.accessToken) return;
+    if (
+      shuffledFiles.length <= 1 ||
+      !session?.accessToken ||
+      loadingRef.current
+    )
+      return;
+    loadingRef.current = true;
 
-    const nextIndex = (currentIndex + 1) % shuffledItems.length;
-    const nextItem = shuffledItems[nextIndex];
+    const nextIndex = (currentIndex + 1) % shuffledFiles.length;
     const nextSlot: 0 | 1 = displaySlot === 0 ? 1 : 0;
 
-    fetchPhotoBlob(session.accessToken, nextItem.mediaFile.baseUrl)
+    fetchDriveImageBlob(session.accessToken, shuffledFiles[nextIndex].id)
       .then(blobUrl => {
         setSlots(prev => {
-          // Revoke old blob URL in the slot we're about to overwrite
           if (prev[nextSlot]) URL.revokeObjectURL(prev[nextSlot]);
           const updated: [string, string] = [...prev];
           updated[nextSlot] = blobUrl;
@@ -121,116 +136,89 @@ export function PhotoWidget({
         });
       })
       .catch(() => {
-        // Skip this photo on error
         setCurrentIndex(nextIndex);
+      })
+      .finally(() => {
+        loadingRef.current = false;
       });
-  }, [shuffledItems, currentIndex, displaySlot, session?.accessToken]);
+  }, [shuffledFiles, currentIndex, displaySlot, session?.accessToken]);
 
-  // ── Auto-advance timer (30s) ──────────────────────────────────────
+  // ── Auto-advance timer (30s) ────────────────────────────────────
   useEffect(() => {
-    if (shuffledItems.length <= 1) return;
-
+    if (shuffledFiles.length <= 1) return;
     timerRef.current = setTimeout(advance, 30_000);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [advance, shuffledItems.length, currentIndex]);
+  }, [advance, shuffledFiles.length, currentIndex]);
 
-  // ── Picker flow ───────────────────────────────────────────────────
-  const openPicker = useCallback(async () => {
-    if (!session?.accessToken || picking) return;
-    setPicking(true);
+  // ── Folder selection handler ────────────────────────────────────
+  const handleFolderChange = useCallback(
+    (id: string, name: string) => {
+      setFolderId(id);
+      setFolderName(name);
+      localStorage.setItem(getStorageKey(pageId), id);
+      localStorage.setItem(getNameStorageKey(pageId), name);
+      setMenuOpen(false);
+    },
+    [pageId],
+  );
 
-    try {
-      const pickerSession = await createPickerSession(session.accessToken);
-      const newSessionId = pickerSession.id;
+  // ── Row layout: [header] [folder items if menu open...] ─────────
+  const headerCount = 1;
+  const listCount = menuOpen ? folders.length : 0;
+  const totalCount = headerCount + listCount;
 
-      // Open Google's picker UI in a popup
-      const pickerUrl = pickerSession.pickerUri + '?autoclose';
-      popupRef.current = window.open(
-        pickerUrl,
-        'google-photos-picker',
-        'width=900,height=700',
-      );
-
-      // Start polling for completion
-      setPolling(true);
-      const pollIntervalMs = 2000;
-
-      const pollFn = async () => {
-        try {
-          const updated = await getPickerSession(session.accessToken, newSessionId);
-          if (updated.mediaItemsSet) {
-            // User finished picking
-            setSessionId(newSessionId);
-            localStorage.setItem(getSessionStorageKey(pageId), newSessionId);
-            setPolling(false);
-            setPicking(false);
-            // Invalidate any existing query so it refetches
-            queryClient.invalidateQueries({
-              queryKey: ['photos', 'pickerItems'],
-            });
-            return;
-          }
-        } catch {
-          // Session may have expired or errored
-        }
-
-        // Check if popup was closed without completing
-        if (popupRef.current?.closed) {
-          // Keep polling a few more times in case the close was from autoclose
-          pollTimerRef.current = setTimeout(async () => {
-            try {
-              const final = await getPickerSession(session.accessToken, newSessionId);
-              if (final.mediaItemsSet) {
-                setSessionId(newSessionId);
-                localStorage.setItem(getSessionStorageKey(pageId), newSessionId);
-                queryClient.invalidateQueries({
-                  queryKey: ['photos', 'pickerItems'],
-                });
-              }
-            } catch {
-              // ignore
-            }
-            setPolling(false);
-            setPicking(false);
-          }, pollIntervalMs);
-          return;
-        }
-
-        pollTimerRef.current = setTimeout(pollFn, pollIntervalMs);
-      };
-
-      pollTimerRef.current = setTimeout(pollFn, pollIntervalMs);
-    } catch {
-      setPicking(false);
-      setPolling(false);
+  // ── Activation / deactivation ───────────────────────────────────
+  useEffect(() => {
+    if (isActive && !wasActive.current) {
+      setCursorIndex(totalCount > 0 ? 0 : -1);
     }
-  }, [session?.accessToken, picking, pageId, queryClient]);
-
-  // Clean up poll timer on unmount
-  useEffect(() => {
-    return () => {
-      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-    };
-  }, []);
-
-  // ── Zone activation / deactivation ────────────────────────────────
-  useEffect(() => {
     if (!isActive && wasActive.current) {
-      // nothing special needed on deactivation for now
+      setCursorIndex(-1);
+      setMenuOpen(false);
     }
     wasActive.current = isActive ?? false;
-  }, [isActive]);
+  }, [isActive, totalCount]);
 
-  // ── Keyboard navigation ───────────────────────────────────────────
+  // ── Scroll active row into view ─────────────────────────────────
+  useEffect(() => {
+    if (cursorIndex >= 0) {
+      rowRefs.current.get(cursorIndex)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [cursorIndex]);
+
+  // ── Keyboard navigation ─────────────────────────────────────────
   useEffect(() => {
     if (!isActive) return;
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Enter') {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
-        openPicker();
+        setCursorIndex(i => Math.min(i + 1, totalCount - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCursorIndex(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Escape' && menuOpen) {
+        e.preventDefault();
+        setMenuOpen(false);
+        setCursorIndex(0);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        setCursorIndex(i => {
+          if (i === 0) {
+            setMenuOpen(prev => !prev);
+          } else if (
+            menuOpen &&
+            i >= headerCount &&
+            i < headerCount + listCount
+          ) {
+            const folder = folders[i - headerCount];
+            handleFolderChange(folder.id, folder.name);
+            return 0;
+          }
+          return i;
+        });
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
         advance();
@@ -239,73 +227,145 @@ export function PhotoWidget({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActive, openPicker, advance]);
+  }, [
+    isActive,
+    totalCount,
+    headerCount,
+    listCount,
+    menuOpen,
+    folders,
+    handleFolderChange,
+    advance,
+  ]);
 
-  // ── Render ────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────
 
-  const headerRow = (
-    <div className="flex items-center justify-between mb-3">
-      <span className="text-xs font-bold uppercase tracking-widest px-1.5 py-0.5">
-        Photos
-      </span>
-      <button
-        className={
-          'text-xs uppercase tracking-widest rounded px-2 py-1 cursor-pointer transition-colors' +
-          (isActive
-            ? ' bg-white/20 hover:bg-white/30'
-            : ' bg-white/10 hover:bg-white/20')
-        }
-        onClick={e => {
-          e.stopPropagation();
-          if (!isActive) onActivate?.();
-          openPicker();
-        }}
-      >
-        {picking ? 'Picking…' : sessionId ? 'Change Photos' : 'Pick Photos'}
-      </button>
-    </div>
-  );
+  const statusText = !folderId
+    ? 'Select a folder to display photos.'
+    : isLoading
+      ? 'Loading photos…'
+      : isError
+        ? 'Could not load photos.'
+        : shuffledFiles.length === 0
+          ? 'No images in this folder.'
+          : null;
 
-  const slideshowContent = !sessionId ? (
-    <p className="text-sm opacity-60">
-      Press &quot;Pick Photos&quot; to select photos from Google Photos.
-    </p>
-  ) : isLoading ? (
-    <p className="text-sm opacity-60">Loading photos…</p>
-  ) : isError ? (
-    <p className="text-sm opacity-60">Could not load photos. Try picking again.</p>
-  ) : shuffledItems.length === 0 ? (
-    <p className="text-sm opacity-60">No photos selected.</p>
-  ) : (
-    <div className="relative w-full aspect-video rounded-lg overflow-hidden">
-      <img
-        src={slots[0]}
-        alt=""
-        className={
-          'absolute inset-0 w-full h-full object-cover transition-opacity duration-1000' +
-          (displaySlot === 0 ? ' opacity-100' : ' opacity-0')
-        }
-      />
-      <img
-        src={slots[1]}
-        alt=""
-        className={
-          'absolute inset-0 w-full h-full object-cover transition-opacity duration-1000' +
-          (displaySlot === 1 ? ' opacity-100' : ' opacity-0')
-        }
-      />
-    </div>
-  );
+  const wrapperClass =
+    'relative text-white overflow-hidden transition-all rounded-xl outline-offset-[-2px] max-h-full flex items-center justify-center hover:outline hover:outline-2 hover:outline-white/30' +
+    (isActive
+      ? ' outline outline-2 outline-white/60'
+      : isFocused
+        ? ' outline outline-2 outline-white/30'
+        : '') +
+    (className ? ` ${className}` : '');
 
   return (
-    <ZoneContainer
-      isFocused={isFocused}
-      isActive={isActive}
-      className={className}
-      onClick={onActivate}
-    >
-      {headerRow}
-      {slideshowContent}
-    </ZoneContainer>
+    <div tabIndex={-1} className={wrapperClass} onClick={onActivate}>
+      {/* Frame + slideshow: relative wrapper keeps slideshow aligned to the frame */}
+      <div className="relative max-h-full max-w-full">
+        <img
+          src="/frame.png"
+          alt=""
+          className="max-w-full max-h-full block drop-shadow-xl"
+        />
+
+        {!statusText && shuffledFiles.length > 0 && (
+          <div className="absolute inset-0 flex items-center justify-center -z-10 mt-3">
+            <div
+              className={
+                'absolute w-3/5 h-3/5 bg-black flex items-center justify-center transition-opacity duration-1000' +
+                (displaySlot === 0 ? ' opacity-100' : ' opacity-0')
+              }
+            >
+              {slots[0] && (
+                <img
+                  src={slots[0]}
+                  alt=""
+                  className="max-w-full max-h-full object-contain"
+                />
+              )}
+            </div>
+            <div
+              className={
+                'absolute w-3/5 h-3/5 bg-black flex items-center justify-center transition-opacity duration-1000' +
+                (displaySlot === 1 ? ' opacity-100' : ' opacity-0')
+              }
+            >
+              {slots[1] && (
+                <img
+                  src={slots[1]}
+                  alt=""
+                  className="max-w-full max-h-full object-contain"
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Overlay UI: only visible when active */}
+      {isActive && (
+        <div className="absolute inset-0 flex flex-col p-4 z-10">
+          {/* Header — current folder name, acts as menu toggle */}
+          <div
+            ref={el => {
+              if (el) rowRefs.current.set(0, el);
+              else rowRefs.current.delete(0);
+            }}
+            className={
+              'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-1.5 flex items-center justify-between gap-1.5 cursor-pointer' +
+              (cursorIndex === 0 ? ' bg-black/40' : '')
+            }
+            onClick={e => {
+              e.stopPropagation();
+              setMenuOpen(prev => !prev);
+              setCursorIndex(0);
+            }}
+          >
+            {folderName || 'Photos'}
+            <span className="text-xs opacity-40">{menuOpen ? '▲' : '▼'}</span>
+          </div>
+
+          {/* Folder picker menu */}
+          {menuOpen && folders.length > 0 && (
+            <div className="flex flex-col gap-1 mt-1 ml-2 border-l border-white/20 pl-2 max-h-48 overflow-y-auto">
+              {folders.map((folder, i) => {
+                const rowIndex = headerCount + i;
+                const isCursor = rowIndex === cursorIndex;
+                const isSelected = folder.id === folderId;
+
+                return (
+                  <span
+                    key={folder.id}
+                    ref={el => {
+                      if (el) rowRefs.current.set(rowIndex, el);
+                      else rowRefs.current.delete(rowIndex);
+                    }}
+                    className={
+                      'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-0.5 transition-all cursor-pointer' +
+                      (isCursor ? ' bg-black/40' : '') +
+                      (isSelected ? ' opacity-100' : ' opacity-50')
+                    }
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleFolderChange(folder.id, folder.name);
+                    }}
+                  >
+                    {folder.name}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Status text centered */}
+          {statusText && (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-sm opacity-60">{statusText}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

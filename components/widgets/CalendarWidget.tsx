@@ -46,9 +46,10 @@ interface Props {
   isFocused?: boolean;
   isActive?: boolean;
   onActivate?: () => void;
+  className?: string;
 }
 
-export function CalendarWidget({ isFocused = false, isActive = false, onActivate }: Props) {
+export function CalendarWidget({ isFocused = false, isActive = false, onActivate, className }: Props) {
   const { data: session } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -91,7 +92,7 @@ export function CalendarWidget({ isFocused = false, isActive = false, onActivate
   const grouped = groupByDate(events);
 
   return (
-    <ZoneContainer ref={scrollRef} isFocused={isFocused} isActive={isActive} onClick={onActivate}>
+    <ZoneContainer ref={scrollRef} isFocused={isFocused} isActive={isActive} onClick={onActivate} className={className}>
       {!events ||
         (!events.length && (
           <p className="text-sm opacity-60">

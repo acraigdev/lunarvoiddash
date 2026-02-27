@@ -54,8 +54,8 @@ export function WeatherWidget({ className }: { className?: string }) {
 
   return (
     <ZoneContainer className={className}>
-      <div className="flex justify-between">
-        <div className="flex items-center gap-3 mb-3">
+      <div className="flex justify-between mb-3">
+        <div className="flex items-center gap-3">
           {weatherIcon(today) && (
             <img src={weatherIcon(today)} alt="" className="w-10 h-10" />
           )}

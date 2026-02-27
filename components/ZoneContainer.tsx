@@ -96,10 +96,9 @@ export function ZoneContainer({
     return () => stopScrolling();
   }, [stopScrolling]);
 
-  const showArrows = isFocused || isActive;
-
   const widgetClass =
-    'text-white rounded-xl bg-gray-dark/50 backdrop-blur-xs max-h-full overflow-hidden transition-all relative' +
+    'text-white rounded-xl bg-gray-dark/50 backdrop-blur-xs max-h-full overflow-hidden transition-all relative outline-offset-[-2px]' +
+    (onClick ? ' hover:outline hover:outline-2 hover:outline-white/30' : '') +
     (isActive
       ? ' outline outline-2 outline-white/60'
       : isFocused
