@@ -9,7 +9,7 @@ export function MusicClient() {
 
   return (
     <>
-      <RemoteNav next="/" prev="/tasks" />
+      <RemoteNav next="/tasks" prev="/" />
       <MusicWidget
         isFocused={focusedIndex === 0}
         isActive={focusedIndex === 0 && isActive}

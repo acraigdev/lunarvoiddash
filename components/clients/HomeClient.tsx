@@ -27,7 +27,7 @@ export function HomeClient() {
             isActive={focusedIndex === 0 && isActive}
             onActivate={() => activateZone(0)}
             pageId="home"
-            className="sm:order-first shrink-0 min-h-0"
+            className="sm:order-first max-w-72 min-h-0"
           />
         </div>
         <WeatherWidget className="shrink-0" />

@@ -61,6 +61,10 @@ export function CalendarWidget({ isFocused = false, isActive = false, onActivate
     queryKey: ['calendar', 'all'],
     queryFn: () => fetchAllCalendarEvents(session!.accessToken),
     enabled: !!session?.accessToken,
+    refetchInterval: () => {
+      const h = new Date().getHours();
+      return h >= 0 && h < 8 ? false : 5 * 60_000;
+    },
   });
 
   const organizerEmails = useMemo(() => {

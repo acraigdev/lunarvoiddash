@@ -342,6 +342,7 @@ export async function fetchDailyForecast(days = 5): Promise<ForecastDay[]> {
     'location.latitude': lat,
     'location.longitude': lng,
     days: String(days),
+    unitsSystem: 'IMPERIAL',
   });
 
   const res = await fetch(
@@ -471,6 +472,23 @@ interface YouTubePlaylistListResponse {
   nextPageToken?: string;
 }
 
+export interface YouTubePlaylistItem {
+  id: string;
+  snippet: {
+    title: string;
+    resourceId: { videoId: string };
+    thumbnails: {
+      default?: { url: string; width: number; height: number };
+      medium?: { url: string; width: number; height: number };
+    };
+  };
+}
+
+interface YouTubePlaylistItemListResponse {
+  items?: YouTubePlaylistItem[];
+  nextPageToken?: string;
+}
+
 // ─── YouTube API (read-only) ────────────────────────────────────────────────
 
 /** Fetch all playlists owned by the authenticated user. */
@@ -497,4 +515,31 @@ export async function fetchYouTubePlaylists(
   } while (pageToken);
 
   return allPlaylists;
+}
+
+/** Fetch all items (videos) in a playlist. */
+export async function fetchPlaylistItems(
+  accessToken: string,
+  playlistId: string,
+): Promise<YouTubePlaylistItem[]> {
+  const allItems: YouTubePlaylistItem[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      part: 'snippet',
+      playlistId,
+      maxResults: '50',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+
+    const data = await googleFetch<YouTubePlaylistItemListResponse>(
+      `https://www.googleapis.com/youtube/v3/playlistItems?${params}`,
+      accessToken,
+    );
+    allItems.push(...(data.items ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return allItems;
 }

@@ -25,8 +25,10 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${montserrat.variable} h-full`}>
       <body className="overflow-hidden h-full">
-        <Wallpaper apod={apod} />
-        <Providers>{children}</Providers>
+        <Providers>
+          <Wallpaper apod={apod} />
+          {children}
+        </Providers>
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { NAV_KEYS } from '@/lib/keys';
 
 /**
  * Two-step focus model for FireStick remote + mouse navigation:
@@ -31,25 +32,21 @@ export function useZoneFocus(zoneCount: number) {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      if (!NAV_KEYS.has(e.key)) return;
+      e.preventDefault();
+
       if (isActive) {
-        if (e.key === 'Escape') {
-          setIsActive(false);
-          e.preventDefault();
-        }
+        if (e.key === 'Escape') setIsActive(false);
         return;
       }
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-        e.preventDefault();
         setFocusedIndex((i) => (i < zoneCount - 1 ? i + 1 : 0));
       } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-        e.preventDefault();
         setFocusedIndex((i) => (i > 0 ? i - 1 : zoneCount - 1));
       } else if (e.key === 'Enter' && focusedIndex >= 0) {
-        e.preventDefault();
         setIsActive(true);
       } else if (e.key === 'Escape' && focusedIndex >= 0) {
-        e.preventDefault();
         setFocusedIndex(-1);
       }
     }

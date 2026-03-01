@@ -18,10 +18,17 @@ interface UseYouTubePlayerReturn {
   isReady: boolean;
   isPlaying: boolean;
   currentVideoTitle: string;
-  loadPlaylist: (playlistId: string) => void;
+  /** Video IDs in the current (shuffled) play order. */
+  playlistVideoIds: string[];
+  /** Index of the currently playing video within playlistVideoIds. */
+  currentIndex: number;
+  /** Shuffle and load an array of video IDs. */
+  loadPlaylist: (videoIds: string[]) => void;
   nextVideo: () => void;
   previousVideo: () => void;
   togglePlay: () => void;
+  /** Jump to a specific index in the playlist. */
+  playVideoAt: (index: number) => void;
 }
 
 let apiLoading = false;
@@ -53,14 +60,36 @@ function ensureAPI(cb: () => void) {
   }
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 export function useYouTubePlayer({
   containerId,
 }: UseYouTubePlayerOptions): UseYouTubePlayerReturn {
   const playerRef = useRef<any>(null);
+  const isReadyRef = useRef(false);
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentVideoTitle, setCurrentVideoTitle] = useState('');
-  const pendingPlaylistRef = useRef<string | null>(null);
+  const [playlistVideoIds, setPlaylistVideoIds] = useState<string[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(-1);
+  const pendingRef = useRef<string[] | null>(null);
+
+  const loadPlaylist = useCallback((videoIds: string[]) => {
+    const shuffled = shuffle(videoIds);
+    if (!isReadyRef.current) {
+      pendingRef.current = shuffled;
+      return;
+    }
+    setPlaylistVideoIds(shuffled);
+    playerRef.current?.loadPlaylist(shuffled);
+  }, []);
 
   useEffect(() => {
     let destroyed = false;
@@ -83,27 +112,22 @@ export function useYouTubePlayer({
         events: {
           onReady: () => {
             if (destroyed) return;
+            isReadyRef.current = true;
             setIsReady(true);
-            // If a playlist was requested before ready, load it now
-            if (pendingPlaylistRef.current) {
-              const id = pendingPlaylistRef.current;
-              pendingPlaylistRef.current = null;
-              playerRef.current?.loadPlaylist({
-                list: id,
-                listType: 'playlist',
-              });
-              setTimeout(() => {
-                playerRef.current?.setShuffle(true);
-                playerRef.current?.playVideo();
-              }, 1000);
+            if (pendingRef.current) {
+              const ids = pendingRef.current;
+              pendingRef.current = null;
+              setPlaylistVideoIds(ids);
+              playerRef.current?.loadPlaylist(ids);
             }
           },
           onStateChange: (event: any) => {
             if (destroyed) return;
-            const YT = window.YT;
-            setIsPlaying(event.data === YT.PlayerState.PLAYING);
+            setIsPlaying(event.data === window.YT.PlayerState.PLAYING);
             const data = playerRef.current?.getVideoData?.();
             if (data?.title) setCurrentVideoTitle(data.title);
+            const idx = playerRef.current?.getPlaylistIndex?.();
+            if (typeof idx === 'number') setCurrentIndex(idx);
           },
         },
       });
@@ -116,40 +140,20 @@ export function useYouTubePlayer({
     };
   }, [containerId]);
 
-  const loadPlaylist = useCallback((playlistId: string) => {
-    if (!playerRef.current || !isReady) {
-      pendingPlaylistRef.current = playlistId;
-      return;
+  const skipVideo = useCallback((direction: 'next' | 'prev') => {
+    if (!playerRef.current) return;
+    const wasPaused =
+      playerRef.current.getPlayerState() === window.YT.PlayerState.PAUSED;
+    if (direction === 'next') playerRef.current.nextVideo();
+    else playerRef.current.previousVideo();
+    if (wasPaused) {
+      setTimeout(() => playerRef.current?.pauseVideo(), 500);
     }
-    playerRef.current.loadPlaylist({
-      list: playlistId,
-      listType: 'playlist',
-    });
-    setTimeout(() => {
-      playerRef.current?.setShuffle(true);
-      playerRef.current?.playVideo();
-    }, 1000);
-  }, [isReady]);
+  }, []);
 
-  const nextVideo = useCallback(() => {
-    if (!playerRef.current) return;
-    const wasPaused =
-      playerRef.current.getPlayerState() === window.YT.PlayerState.PAUSED;
-    playerRef.current.nextVideo();
-    if (wasPaused) {
-      // YT auto-plays on next/prev — re-pause after the state settles
-      setTimeout(() => playerRef.current?.pauseVideo(), 500);
-    }
-  }, []);
-  const previousVideo = useCallback(() => {
-    if (!playerRef.current) return;
-    const wasPaused =
-      playerRef.current.getPlayerState() === window.YT.PlayerState.PAUSED;
-    playerRef.current.previousVideo();
-    if (wasPaused) {
-      setTimeout(() => playerRef.current?.pauseVideo(), 500);
-    }
-  }, []);
+  const nextVideo = useCallback(() => skipVideo('next'), [skipVideo]);
+  const previousVideo = useCallback(() => skipVideo('prev'), [skipVideo]);
+
   const togglePlay = useCallback(() => {
     if (!playerRef.current) return;
     const state = playerRef.current.getPlayerState();
@@ -160,13 +164,20 @@ export function useYouTubePlayer({
     }
   }, []);
 
+  const playVideoAt = useCallback((index: number) => {
+    playerRef.current?.playVideoAt(index);
+  }, []);
+
   return {
     isReady,
     isPlaying,
     currentVideoTitle,
+    playlistVideoIds,
+    currentIndex,
     loadPlaylist,
     nextVideo,
     previousVideo,
     togglePlay,
+    playVideoAt,
   };
 }

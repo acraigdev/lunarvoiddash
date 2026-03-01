@@ -31,7 +31,8 @@ export function WeatherWidget({ className }: { className?: string }) {
   } = useQuery({
     queryKey: ['weather', 'daily'],
     queryFn: () => fetchDailyForecast(5),
-    staleTime: 30 * 60_000, // refresh every 30 min
+    staleTime: 30 * 60_000,
+    refetchInterval: 30 * 60_000,
   });
 
   if (isLoading) {
@@ -59,14 +60,14 @@ export function WeatherWidget({ className }: { className?: string }) {
           {weatherIcon(today) && (
             <img src={weatherIcon(today)} alt="" className="w-10 h-10" />
           )}
-          <p className="text-2xl font-bold leading-none">
+          <div className="text-2xl font-bold leading-none">
             {Math.round(today.maxTemperature.degrees)}°
             <p className="text-xs opacity-60">
               {today.daytimeForecast?.weatherCondition.description.text}
             </p>
-          </p>
+          </div>
         </div>
-        <h3 className="flex items-center gap-4">
+        <h3 className="flex items-center gap-4" suppressHydrationWarning>
           {format(new Date(), 'iiii, LLL do')}{' '}
           <MoonPhase phase={today.moonEvents.moonPhase} />
         </h3>

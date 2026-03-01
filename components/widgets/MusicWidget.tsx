@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchYouTubePlaylists } from '@/lib/google';
+import { fetchYouTubePlaylists, fetchPlaylistItems } from '@/lib/google';
+import { NAV_KEYS } from '@/lib/keys';
 import { useYouTubePlayer } from '@/hooks/useYouTubePlayer';
 import { ZoneContainer } from '../ZoneContainer';
+import { Dropdown, DropdownHandle } from '../Dropdown';
 
 interface Props {
   isFocused?: boolean;
@@ -25,43 +27,93 @@ export function MusicWidget({
   const { data: session } = useSession();
   const rowRefs = useRef<Map<number, HTMLElement>>(new Map());
   const wasActive = useRef(false);
+  const ddRef = useRef<DropdownHandle>(null);
 
   const [cursorIndex, setCursorIndex] = useState(-1);
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState('');
+  const [selectedId, setSelectedId] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const cursorIndexRef = useRef(cursorIndex);
+  cursorIndexRef.current = cursorIndex;
 
-  // ── YouTube player ────────────────────────────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`music-selected-playlist-${pageId}`);
+      if (saved) setSelectedId(JSON.parse(saved).id);
+    } catch { /* ignore */ }
+  }, [pageId]);
+
   const {
     isReady,
     isPlaying,
     currentVideoTitle,
+    playlistVideoIds,
+    currentIndex,
     loadPlaylist,
     nextVideo,
     previousVideo,
     togglePlay,
+    playVideoAt,
   } = useYouTubePlayer({ containerId: `yt-player-${pageId}` });
 
-  // ── Fetch playlists ───────────────────────────────────────────────
-  const {
-    data: playlists = [],
-    isLoading,
-    isError,
-  } = useQuery({
+  const { data: playlists = [] } = useQuery({
     queryKey: ['youtube', 'playlists'],
     queryFn: () => fetchYouTubePlaylists(session!.accessToken),
     enabled: !!session?.accessToken,
     staleTime: 30 * 60_000,
   });
 
-  const totalCount = playlists.length;
+  const { data: playlistItems = [] } = useQuery({
+    queryKey: ['youtube', 'playlistItems', selectedId],
+    queryFn: () => fetchPlaylistItems(session!.accessToken, selectedId),
+    enabled: !!session?.accessToken && !!selectedId,
+    staleTime: 30 * 60_000,
+  });
 
-  // ── Playlist selection handler ────────────────────────────────────
-  const handleSelect = useCallback(
-    (playlistId: string) => {
-      setSelectedPlaylistId(playlistId);
-      loadPlaylist(playlistId);
-    },
-    [loadPlaylist],
+  const tracks = useMemo(() => {
+    if (playlistVideoIds.length === 0) {
+      return playlistItems.map(item => ({
+        videoId: item.snippet.resourceId.videoId,
+        title: item.snippet.title,
+      }));
+    }
+    const titleMap = new Map(
+      playlistItems.map(item => [
+        item.snippet.resourceId.videoId,
+        item.snippet.title,
+      ]),
+    );
+    return playlistVideoIds.map(id => ({
+      videoId: id,
+      title: titleMap.get(id) || id,
+    }));
+  }, [playlistVideoIds, playlistItems]);
+
+  // Load the player when playlist items arrive (initial or after selection change)
+  const loadedPlaylistRef = useRef('');
+  useEffect(() => {
+    if (
+      !isReady ||
+      !selectedId ||
+      playlistItems.length === 0 ||
+      selectedId === loadedPlaylistRef.current
+    )
+      return;
+    loadedPlaylistRef.current = selectedId;
+    const videoIds = playlistItems.map(
+      (item: any) => item.snippet.resourceId.videoId,
+    );
+    loadPlaylist(videoIds);
+  }, [isReady, selectedId, playlistItems, loadPlaylist]);
+
+  const dropdownItems = useMemo(
+    () => playlists.map((pl: any) => ({ id: pl.id, label: pl.snippet.title })),
+    [playlists],
   );
+
+  // ── Row layout: [header] [playlist menu items...] [track items...] ─
+  const headerCount = 1;
+  const listCount = menuOpen ? dropdownItems.length : 0;
+  const totalCount = headerCount + listCount + tracks.length;
 
   // ── Activation / deactivation ─────────────────────────────────────
   useEffect(() => {
@@ -70,6 +122,7 @@ export function MusicWidget({
     }
     if (!isActive && wasActive.current) {
       setCursorIndex(-1);
+      ddRef.current?.closeMenu();
     }
     wasActive.current = isActive ?? false;
   }, [isActive, totalCount]);
@@ -86,28 +139,40 @@ export function MusicWidget({
     if (!isActive) return;
 
     function handleKeyDown(e: KeyboardEvent) {
+      if (!NAV_KEYS.has(e.key)) return;
+      e.preventDefault();
+
       if (e.key === 'ArrowDown') {
-        e.preventDefault();
         setCursorIndex(i => Math.min(i + 1, totalCount - 1));
       } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
         setCursorIndex(i => Math.max(i - 1, 0));
+      } else if (e.key === 'Escape' && menuOpen) {
+        ddRef.current?.closeMenu();
+        setCursorIndex(0);
       } else if (e.key === 'Enter') {
-        e.preventDefault();
-        setCursorIndex(i => {
-          if (i >= 0 && i < totalCount) {
-            handleSelect(playlists[i].id);
+        const i = cursorIndexRef.current;
+        if (i === 0) {
+          ddRef.current?.toggleMenu();
+        } else if (
+          menuOpen &&
+          i >= headerCount &&
+          i < headerCount + listCount
+        ) {
+          ddRef.current?.selectAtIndex(i - headerCount);
+          setCursorIndex(0);
+        } else {
+          const trackIndex = i - headerCount - listCount;
+          if (trackIndex >= 0 && trackIndex < tracks.length) {
+            if (playlistVideoIds.length > 0) {
+              playVideoAt(trackIndex);
+            }
           }
-          return i;
-        });
+        }
       } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
         nextVideo();
       } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
         previousVideo();
       } else if (e.key === ' ' || e.key === 'MediaPlayPause') {
-        e.preventDefault();
         togglePlay();
       }
     }
@@ -117,83 +182,81 @@ export function MusicWidget({
   }, [
     isActive,
     totalCount,
-    playlists,
-    handleSelect,
+    headerCount,
+    listCount,
+    menuOpen,
+    tracks,
+    playlistVideoIds,
+    playVideoAt,
     nextVideo,
     previousVideo,
     togglePlay,
   ]);
 
-  // ── Render ────────────────────────────────────────────────────────
-
   return (
-    <div
-      className={
-        'flex gap-4 h-full' + (className ? ` ${className}` : '')
-      }
-    >
-      {/* Left: playlist selector */}
+    <div className={'flex gap-4 h-full' + (className ? ` ${className}` : '')}>
+      {/* Left: playlist dropdown + track list */}
       <ZoneContainer
         isFocused={isFocused}
         isActive={isActive}
         onClick={onActivate}
         className="w-64 shrink-0"
       >
-        <h2 className="text-xs font-bold uppercase tracking-widest mb-3 opacity-60">
-          Playlists
-        </h2>
+        <Dropdown
+          ref={ddRef}
+          storageKey={`music-selected-playlist-${pageId}`}
+          defaultLabel="Playlists"
+          items={dropdownItems}
+          isActive={isActive}
+          cursorIndex={cursorIndex}
+          rowRefs={rowRefs}
+          onSelect={id => setSelectedId(id)}
+          onMenuChange={setMenuOpen}
+        />
 
-        {isLoading && (
-          <p className="text-sm opacity-60">Loading playlists…</p>
+        {tracks.length === 0 && selectedId && (
+          <p className="text-sm opacity-60">Loading tracks…</p>
         )}
-        {isError && (
-          <p className="text-sm opacity-60">Could not load playlists.</p>
+        {tracks.length === 0 && !selectedId && (
+          <p className="text-sm opacity-60">Select a playlist.</p>
         )}
-
-        {!isLoading && !isError && playlists.length === 0 && (
-          <p className="text-sm opacity-60">No playlists found.</p>
-        )}
-
-        {playlists.length > 0 && (
+        {tracks.length > 0 && (
           <ul className="space-y-1">
-            {playlists.map((pl, i) => {
-              const isCursor = isActive && i === cursorIndex;
-              const isSelected = pl.id === selectedPlaylistId;
+            {tracks.map((track, i) => {
+              const rowIndex = headerCount + listCount + i;
+              const isCursor = isActive && rowIndex === cursorIndex;
+              const isCurrent =
+                playlistVideoIds.length > 0 && i === currentIndex;
 
               return (
                 <li
-                  key={pl.id}
+                  key={`${track.videoId}-${i}`}
                   ref={el => {
-                    if (el) rowRefs.current.set(i, el);
-                    else rowRefs.current.delete(i);
+                    if (el) rowRefs.current.set(rowIndex, el);
+                    else rowRefs.current.delete(rowIndex);
                   }}
                   className={
-                    'flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors cursor-pointer' +
+                    'flex items-center gap-2 rounded-lg px-2 py-1 transition-colors cursor-pointer' +
                     (isCursor ? ' bg-white/20' : '') +
-                    (isSelected ? ' opacity-100' : ' opacity-50')
+                    (isCurrent
+                      ? ' opacity-100'
+                      : i < currentIndex
+                        ? ' opacity-30'
+                        : ' opacity-50')
                   }
                   onClick={e => {
                     e.stopPropagation();
                     if (!isActive) onActivate?.();
-                    handleSelect(pl.id);
-                    setCursorIndex(i);
+                    if (playlistVideoIds.length > 0) playVideoAt(i);
+                    setCursorIndex(rowIndex);
                   }}
                 >
-                  {pl.snippet.thumbnails?.default?.url && (
-                    <img
-                      src={pl.snippet.thumbnails.default.url}
-                      alt=""
-                      className="w-8 h-8 rounded object-cover shrink-0"
-                    />
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {pl.snippet.title}
-                    </p>
-                    <p className="text-xs opacity-40">
-                      {pl.contentDetails.itemCount} videos
-                    </p>
-                  </div>
+                  <span className="text-xs opacity-40 w-4 text-right shrink-0">
+                    {isCurrent ? '▶' : i + 1}
+                  </span>
+                  <span className="text-sm font-medium truncate">
+                    {track.title}
+                  </span>
                 </li>
               );
             })}
@@ -201,7 +264,6 @@ export function MusicWidget({
         )}
       </ZoneContainer>
 
-      {/* Right: player + now playing */}
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black">
           <div id={`yt-player-${pageId}`} className="w-full h-full" />
@@ -212,7 +274,6 @@ export function MusicWidget({
           )}
         </div>
 
-        {/* Controls + now playing */}
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-dark/50 backdrop-blur-xs">
           <div className="flex items-center gap-1 shrink-0">
             <button

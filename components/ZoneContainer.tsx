@@ -117,7 +117,7 @@ export function ZoneContainer({
           <span className="text-white/70 text-xs">▲</span>
         </div>
       )}
-      <div ref={combinedRef} className="px-5 py-4 overflow-y-auto max-h-full">
+      <div ref={combinedRef} className="p-4 overflow-y-auto max-h-full">
         {children}
       </div>
       {isActive && canScrollDown && (

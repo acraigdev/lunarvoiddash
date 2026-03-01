@@ -1,14 +1,24 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+} from 'react';
 import { useSession } from 'next-auth/react';
 import { useQuery } from '@tanstack/react-query';
+import { NAV_KEYS } from '@/lib/keys';
 import {
   fetchDriveFolders,
   fetchDriveFolderImages,
   fetchDriveImageBlob,
   DriveFile,
 } from '@/lib/google';
+import { Dropdown, DropdownHandle } from '../Dropdown';
+
 interface Props {
   isFocused?: boolean;
   isActive?: boolean;
@@ -17,13 +27,7 @@ interface Props {
   className?: string;
 }
 
-function getStorageKey(pageId: string) {
-  return `photos-drive-folder-${pageId}`;
-}
-
-function getNameStorageKey(pageId: string) {
-  return `photos-drive-folder-name-${pageId}`;
-}
+const STORAGE_PREFIX = 'photos-drive-folder-';
 
 function shuffle<T>(arr: T[]): T[] {
   const result = [...arr];
@@ -46,70 +50,80 @@ export function PhotoWidget({
   const { data: session } = useSession();
   const rowRefs = useRef<Map<number, HTMLElement>>(new Map());
   const wasActive = useRef(false);
+  const ddRef = useRef<DropdownHandle>(null);
+  const frameRef = useRef<HTMLImageElement>(null);
+  const [frameSize, setFrameSize] = useState<{ w: number; h: number } | null>(
+    null,
+  );
 
-  // ── Persisted folder selection ──────────────────────────────────
-  const [folderId, setFolderId] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return localStorage.getItem(getStorageKey(pageId)) || '';
-  });
+  useEffect(() => {
+    const img = frameRef.current;
+    if (!img) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setFrameSize({ w: width, h: height });
+    });
+    ro.observe(img);
+    return () => ro.disconnect();
+  }, []);
 
-  const [folderName, setFolderName] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return localStorage.getItem(getNameStorageKey(pageId)) || '';
-  });
+  // Local selectedId so image queries work even when Dropdown isn't mounted
+  const [selectedId, setSelectedId] = useState('');
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_PREFIX + pageId);
+    if (saved) setSelectedId(JSON.parse(saved).id);
+  }, [pageId]);
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [cursorIndex, setCursorIndex] = useState(-1);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const cursorIndexRef = useRef(cursorIndex);
+  cursorIndexRef.current = cursorIndex;
 
-  // ── Fetch folders (only when menu is open) ──────────────────────
   const { data: folders = [] } = useQuery({
     queryKey: ['drive', 'folders'],
     queryFn: () => fetchDriveFolders(session!.accessToken),
     enabled: menuOpen && !!session?.accessToken,
   });
 
-  // ── Fetch images from selected folder ───────────────────────────
   const {
     data: imageFiles = EMPTY_FILES,
     isLoading,
     isError,
-    dataUpdatedAt,
   } = useQuery({
-    queryKey: ['drive', 'images', folderId],
-    queryFn: () => fetchDriveFolderImages(session!.accessToken, folderId),
-    enabled: !!session?.accessToken && !!folderId,
+    queryKey: ['drive', 'images', selectedId],
+    queryFn: () => fetchDriveFolderImages(session!.accessToken, selectedId),
+    enabled: !!session?.accessToken && !!selectedId,
     staleTime: 30 * 60_000,
     refetchInterval: 60 * 60_000,
   });
 
-  // ── Shuffled order ──────────────────────────────────────────────
+  const imageFileIds = imageFiles.map(f => f.id).join(',');
   const shuffledFiles = useMemo(
     () => shuffle(imageFiles),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [imageFiles, dataUpdatedAt],
+    [imageFileIds],
   );
 
-  // ── Slideshow state ─────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
   const [displaySlot, setDisplaySlot] = useState<0 | 1>(0);
   const [slots, setSlots] = useState<[string, string]>(['', '']);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef = useRef(false);
+  const accessTokenRef = useRef(session?.accessToken);
+  accessTokenRef.current = session?.accessToken;
 
-  // ── Load first photo when items change ──────────────────────────
   useEffect(() => {
     setCurrentIndex(0);
     setDisplaySlot(0);
     setSlots(['', '']);
 
-    if (shuffledFiles.length > 0 && session?.accessToken) {
-      fetchDriveImageBlob(session.accessToken, shuffledFiles[0].id)
+    if (shuffledFiles.length > 0 && accessTokenRef.current) {
+      fetchDriveImageBlob(accessTokenRef.current, shuffledFiles[0].id)
         .then(blobUrl => setSlots([blobUrl, '']))
         .catch(() => {});
     }
-  }, [shuffledFiles, session?.accessToken]);
+  }, [shuffledFiles]);
 
-  // ── Advance to next photo ───────────────────────────────────────
   const advance = useCallback(() => {
     if (
       shuffledFiles.length <= 1 ||
@@ -152,21 +166,14 @@ export function PhotoWidget({
     };
   }, [advance, shuffledFiles.length, currentIndex]);
 
-  // ── Folder selection handler ────────────────────────────────────
-  const handleFolderChange = useCallback(
-    (id: string, name: string) => {
-      setFolderId(id);
-      setFolderName(name);
-      localStorage.setItem(getStorageKey(pageId), id);
-      localStorage.setItem(getNameStorageKey(pageId), name);
-      setMenuOpen(false);
-    },
-    [pageId],
+  const dropdownItems = useMemo(
+    () => folders.map((f: any) => ({ id: f.id, label: f.name })),
+    [folders],
   );
 
   // ── Row layout: [header] [folder items if menu open...] ─────────
   const headerCount = 1;
-  const listCount = menuOpen ? folders.length : 0;
+  const listCount = menuOpen ? dropdownItems.length : 0;
   const totalCount = headerCount + listCount;
 
   // ── Activation / deactivation ───────────────────────────────────
@@ -176,7 +183,7 @@ export function PhotoWidget({
     }
     if (!isActive && wasActive.current) {
       setCursorIndex(-1);
-      setMenuOpen(false);
+      ddRef.current?.closeMenu();
     }
     wasActive.current = isActive ?? false;
   }, [isActive, totalCount]);
@@ -193,65 +200,51 @@ export function PhotoWidget({
     if (!isActive) return;
 
     function handleKeyDown(e: KeyboardEvent) {
+      if (!NAV_KEYS.has(e.key)) return;
+      e.preventDefault();
+
       if (e.key === 'ArrowDown') {
-        e.preventDefault();
         setCursorIndex(i => Math.min(i + 1, totalCount - 1));
       } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
         setCursorIndex(i => Math.max(i - 1, 0));
       } else if (e.key === 'Escape' && menuOpen) {
-        e.preventDefault();
-        setMenuOpen(false);
+        ddRef.current?.closeMenu();
         setCursorIndex(0);
       } else if (e.key === 'Enter') {
-        e.preventDefault();
-        setCursorIndex(i => {
-          if (i === 0) {
-            setMenuOpen(prev => !prev);
-          } else if (
-            menuOpen &&
-            i >= headerCount &&
-            i < headerCount + listCount
-          ) {
-            const folder = folders[i - headerCount];
-            handleFolderChange(folder.id, folder.name);
-            return 0;
-          }
-          return i;
-        });
+        const i = cursorIndexRef.current;
+        if (i === 0) {
+          ddRef.current?.toggleMenu();
+        } else if (
+          menuOpen &&
+          i >= headerCount &&
+          i < headerCount + listCount
+        ) {
+          ddRef.current?.selectAtIndex(i - headerCount);
+          setCursorIndex(0);
+        }
       } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
         advance();
       }
     }
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isActive,
-    totalCount,
-    headerCount,
-    listCount,
-    menuOpen,
-    folders,
-    handleFolderChange,
-    advance,
-  ]);
+  }, [isActive, totalCount, headerCount, listCount, menuOpen, advance]);
 
   // ── Render ──────────────────────────────────────────────────────
 
-  const statusText = !folderId
+  const statusText = !selectedId
     ? 'Select a folder to display photos.'
-    : isLoading
+    : isLoading && shuffledFiles.length === 0
       ? 'Loading photos…'
-      : isError
+      : isError && shuffledFiles.length === 0
         ? 'Could not load photos.'
         : shuffledFiles.length === 0
           ? 'No images in this folder.'
           : null;
 
   const wrapperClass =
-    'relative text-white overflow-hidden transition-all rounded-xl outline-offset-[-2px] max-h-full flex items-center justify-center hover:outline hover:outline-2 hover:outline-white/30' +
+    'relative text-white overflow-hidden transition-all rounded-xl outline-offset-[-2px] h-full flex items-center justify-center hover:outline hover:outline-2 hover:outline-white/30' +
     (isActive
       ? ' outline outline-2 outline-white/60'
       : isFocused
@@ -259,104 +252,75 @@ export function PhotoWidget({
         : '') +
     (className ? ` ${className}` : '');
 
+  const slideshowStyle: CSSProperties | undefined = frameSize
+    ? {
+        width: frameSize.w * 0.6,
+        height: frameSize.h * 0.51,
+        top: '52%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+      }
+    : undefined;
+
   return (
     <div tabIndex={-1} className={wrapperClass} onClick={onActivate}>
-      {/* Frame + slideshow: relative wrapper keeps slideshow aligned to the frame */}
-      <div className="relative max-h-full max-w-full">
-        <img
-          src="/frame.png"
-          alt=""
-          className="max-w-full max-h-full block drop-shadow-xl"
-        />
+      {/* Frame as direct flex child so max-h-full resolves against the wrapper's definite h-full */}
+      <img
+        ref={frameRef}
+        src="/frame.png"
+        alt=""
+        className="max-w-full max-h-full block drop-shadow-xl pointer-events-none relative z-10"
+      />
 
-        {!statusText && shuffledFiles.length > 0 && (
-          <div className="absolute inset-0 flex items-center justify-center -z-10 mt-3">
-            <div
-              className={
-                'absolute w-3/5 h-3/5 bg-black flex items-center justify-center transition-opacity duration-1000' +
-                (displaySlot === 0 ? ' opacity-100' : ' opacity-0')
-              }
-            >
-              {slots[0] && (
-                <img
-                  src={slots[0]}
-                  alt=""
-                  className="max-w-full max-h-full object-contain"
-                />
-              )}
-            </div>
-            <div
-              className={
-                'absolute w-3/5 h-3/5 bg-black flex items-center justify-center transition-opacity duration-1000' +
-                (displaySlot === 1 ? ' opacity-100' : ' opacity-0')
-              }
-            >
-              {slots[1] && (
-                <img
-                  src={slots[1]}
-                  alt=""
-                  className="max-w-full max-h-full object-contain"
-                />
-              )}
-            </div>
+      {/* Slideshow: absolutely positioned + sized via measured frame dimensions */}
+      {!statusText && shuffledFiles.length > 0 && slideshowStyle && (
+        <div className="absolute -z-10 bg-black" style={slideshowStyle}>
+          <div
+            className={
+              'absolute inset-0 flex items-center justify-center transition-opacity duration-1000' +
+              (displaySlot === 0 ? ' opacity-100' : ' opacity-0')
+            }
+          >
+            {slots[0] && (
+              <img
+                src={slots[0]}
+                alt=""
+                className="max-w-full max-h-full object-contain"
+              />
+            )}
           </div>
-        )}
-      </div>
+          <div
+            className={
+              'absolute inset-0 flex items-center justify-center transition-opacity duration-1000' +
+              (displaySlot === 1 ? ' opacity-100' : ' opacity-0')
+            }
+          >
+            {slots[1] && (
+              <img
+                src={slots[1]}
+                alt=""
+                className="max-w-full max-h-full object-contain"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Overlay UI: only visible when active */}
       {isActive && (
         <div className="absolute inset-0 flex flex-col p-4 z-10">
-          {/* Header — current folder name, acts as menu toggle */}
-          <div
-            ref={el => {
-              if (el) rowRefs.current.set(0, el);
-              else rowRefs.current.delete(0);
-            }}
-            className={
-              'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-1.5 flex items-center justify-between gap-1.5 cursor-pointer' +
-              (cursorIndex === 0 ? ' bg-black/40' : '')
-            }
-            onClick={e => {
-              e.stopPropagation();
-              setMenuOpen(prev => !prev);
-              setCursorIndex(0);
-            }}
-          >
-            {folderName || 'Photos'}
-            <span className="text-xs opacity-40">{menuOpen ? '▲' : '▼'}</span>
-          </div>
-
-          {/* Folder picker menu */}
-          {menuOpen && folders.length > 0 && (
-            <div className="flex flex-col gap-1 mt-1 ml-2 border-l border-white/20 pl-2 max-h-48 overflow-y-auto">
-              {folders.map((folder, i) => {
-                const rowIndex = headerCount + i;
-                const isCursor = rowIndex === cursorIndex;
-                const isSelected = folder.id === folderId;
-
-                return (
-                  <span
-                    key={folder.id}
-                    ref={el => {
-                      if (el) rowRefs.current.set(rowIndex, el);
-                      else rowRefs.current.delete(rowIndex);
-                    }}
-                    className={
-                      'text-xs font-bold uppercase tracking-widest rounded px-1.5 py-0.5 transition-all cursor-pointer' +
-                      (isCursor ? ' bg-black/40' : '') +
-                      (isSelected ? ' opacity-100' : ' opacity-50')
-                    }
-                    onClick={e => {
-                      e.stopPropagation();
-                      handleFolderChange(folder.id, folder.name);
-                    }}
-                  >
-                    {folder.name}
-                  </span>
-                );
-              })}
-            </div>
-          )}
+          <Dropdown
+            ref={ddRef}
+            storageKey={STORAGE_PREFIX + pageId}
+            defaultLabel="Photos"
+            items={dropdownItems}
+            isActive={isActive}
+            cursorIndex={cursorIndex}
+            rowRefs={rowRefs}
+            onSelect={id => setSelectedId(id)}
+            onMenuChange={setMenuOpen}
+            menuClassName="max-h-48 overflow-y-auto"
+          />
 
           {/* Status text centered */}
           {statusText && (
