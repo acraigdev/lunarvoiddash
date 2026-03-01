@@ -11,9 +11,14 @@ export function Wallpaper({ apod }: { apod: ApodData }) {
     refetchInterval: 60 * 60_000,
   });
 
+  const src =
+    data.media_type === 'video'
+      ? 'https://www.nasa.gov/wp-content/uploads/2025/02/30dor.jpg?resize=2000,1344'
+      : data.hdurl ?? data.url;
+
   return (
     <img
-      src={data.hdurl ?? data.url}
+      src={src}
       alt={data.title}
       className="fixed inset-0 w-full h-full object-cover -z-10 pointer-events-none"
     />
