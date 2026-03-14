@@ -6,12 +6,14 @@ import { CalendarWidget } from '../widgets/CalendarWidget';
 import { TaskWidget } from '../widgets/TaskWidget';
 import { WeatherWidget } from '../widgets/WeatherWidget';
 import { PhotoWidget } from '../widgets/PhotoWidget';
+import { AuthAlert } from '../AuthAlert';
 
 export function HomeClient() {
   const { focusedIndex, isActive, activateZone } = useZoneFocus(3);
 
   return (
     <div className="h-full flex flex-col md:flex-row justify-center gap-3 overflow-hidden">
+      <AuthAlert />
       <RemoteNav next="/music" prev="/task" />
       <div className="flex flex-col gap-3 min-h-0 md:flex-2 min-w-0">
         <div className="sm:flex gap-3 flex-1 min-h-0 overflow-hidden">
