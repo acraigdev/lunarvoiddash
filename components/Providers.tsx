@@ -9,8 +9,13 @@ import { ErrorBoundary } from './ErrorBoundary';
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ErrorBoundary>
-      <SessionProvider>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <SessionProvider
+        refetchInterval={12 * 60 * 60}
+        refetchOnWindowFocus={false}
+      >
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </SessionProvider>
     </ErrorBoundary>
   );
